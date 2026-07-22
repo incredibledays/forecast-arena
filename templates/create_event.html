@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Create Event') }} · ForecastArena{% endblock %}
+{% block content %}
+
+  <div class="mb-4">
+    <a href="{{ url_for('index') }}" class="text-sm text-gray-500 hover:text-ink">&larr; {{ _('All markets') }}</a>
+  </div>
+
+  <div class="mb-6">
+    <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-ink">{{ _('Create Event') }}</h1>
+    <p class="mt-2 text-sm text-gray-600 max-w-2xl">
+      {{ _('New events start OPEN with a 50/50 YES/NO price. All fields except title are optional. This page has no authentication — anyone with the URL can create events.') }}
+    </p>
+  </div>
+
+  {# ============ Two-column layout ============
+     Left: the form (main flow).
+     Right: AI-assist panel + tips (aside — sticky on desktop, above on mobile). #}
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    {# ---------- LEFT: main form (2/3 wide) ---------- #}
+    <form method="POST" action="{{ url_for('create_event') }}"
+          id="create-event-form"
+          class="lg:col-span-2 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 space-y-5">
+
+      <div>
+        <label for="title" class="block text-sm font-semibold text-ink mb-1.5">
+          {{ _('Title') }} <span class="text-gray-400 font-normal">({{ _('required') }})</span>
+        </label>
+        <input type="text" id="title" name="title" maxlength="255" required
+               value="{{ form.get('title', '') }}"
+               placeholder="{{ _('e.g. Will the S&P 500 close above 6500 on 2026-12-31?') }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+      </div>
+
+      <div>
+        <label for="event_type" class="block text-sm font-semibold text-ink mb-1.5">
+          {{ _('Event type') }}
+        </label>
+        {% set current_type = form.get('event_type', 'BINARY') %}
+        <select id="event_type" name="event_type"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+          <option value="BINARY" {% if current_type == 'BINARY' %}selected{% endif %}>
+            {{ _('Binary — YES / NO') }}
+          </option>
+          <option value="CATEGORICAL" {% if current_type == 'CATEGORICAL' %}selected{% endif %}>
+            {{ _('Categorical — pick one of N (mutually exclusive)') }}
+          </option>
+          <option value="SCALAR" {% if current_type == 'SCALAR' %}selected{% endif %}>
+            {{ _('Scalar — numeric range prediction') }}
+          </option>
+          <option value="GROUPED" {% if current_type == 'GROUPED' %}selected{% endif %}>
+            {{ _('Grouped — N independent YES/NO sub-markets') }}
+          </option>
+          <option value="CONDITIONAL" {% if current_type == 'CONDITIONAL' %}selected{% endif %}>
+            {{ _('Conditional — YES/NO gated by a parent market') }}
+          </option>
+        </select>
+      </div>
+
+      <div id="candidates-group"
+           class="{% if current_type not in ('CATEGORICAL', 'GROUPED') %}hidden{% endif %}">
+        <label for="candidates" class="block text-sm font-semibold text-ink mb-1.5">
+          {{ _('Sub-markets') }} <span class="text-gray-400 font-normal">({{ _('one per line, at least 2') }})</span>
+        </label>
+        <textarea id="candidates" name="candidates" rows="5"
+                  placeholder="{{ _('e.g.\nTrump\nHarris\nNewsom\nOther') }}"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">{{ form.get('candidates', '') }}</textarea>
+        <p class="text-xs text-gray-500 mt-1">
+          {{ _('Each line becomes an independent binary market. For CATEGORICAL, resolution picks exactly one winner; for GROUPED, each resolves YES/NO independently. Max 32.') }}
+        </p>
+      </div>
+
+      <div id="scalar-group"
+           class="{% if current_type != 'SCALAR' %}hidden{% endif %} space-y-4">
+        <div>
+          <label for="scalar_unit" class="block text-sm font-semibold text-ink mb-1.5">
+            {{ _('Unit') }} <span class="text-gray-400 font-normal">({{ _('optional, display only') }})</span>
+          </label>
+          <input type="text" id="scalar_unit" name="scalar_unit" maxlength="32"
+                 value="{{ form.get('scalar_unit', '') }}"
+                 placeholder="{{ _('e.g. USD, %%, cuts, °C') }}"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+        </div>
+        <div>
+          <label for="buckets" class="block text-sm font-semibold text-ink mb-1.5">
+            {{ _('Buckets') }} <span class="text-gray-400 font-normal">({{ _('one `lo-hi` per line, at least 2') }})</span>
+          </label>
+          <textarea id="buckets" name="buckets" rows="6"
+                    placeholder="{{ _('e.g.\n<50000\n50000-100000\n100000-150000\n150000+') }}"
+                    class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">{{ form.get('buckets', '') }}</textarea>
+          <p class="text-xs text-gray-500 mt-1">
+            {{ _('Each line is [lo, hi). Tail buckets `<X` and `X+` (or `>=X`) allowed — at most one of each, first/last. Max 32.') }}
+          </p>
+        </div>
+        <div class="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3">
+          <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-2">
+            {{ _('Or: auto-generate equal-width buckets') }}
+          </div>
+          <p class="text-xs text-gray-500 mb-2">
+            {{ _('Fill min / max / count and leave the buckets textarea empty.') }}
+          </p>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label for="scalar_min" class="block text-xs text-gray-500 mb-1">{{ _('Min') }}</label>
+              <input type="text" id="scalar_min" name="scalar_min"
+                     value="{{ form.get('scalar_min', '') }}"
+                     placeholder="0"
+                     class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm font-mono">
+            </div>
+            <div>
+              <label for="scalar_max" class="block text-xs text-gray-500 mb-1">{{ _('Max') }}</label>
+              <input type="text" id="scalar_max" name="scalar_max"
+                     value="{{ form.get('scalar_max', '') }}"
+                     placeholder="100"
+                     class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm font-mono">
+            </div>
+            <div>
+              <label for="scalar_count" class="block text-xs text-gray-500 mb-1">{{ _('Count') }}</label>
+              <input type="number" id="scalar_count" name="scalar_count" min="2" max="32"
+                     value="{{ form.get('scalar_count', '') }}"
+                     placeholder="5"
+                     class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm font-mono">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="conditional-group"
+           class="{% if current_type != 'CONDITIONAL' %}hidden{% endif %} space-y-4">
+        <div>
+          <label for="parent_market_id" class="block text-sm font-semibold text-ink mb-1.5">
+            {{ _('Parent market') }}
+          </label>
+          <select id="parent_market_id" name="parent_market_id"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+            <option value="">{{ _('— choose a market —') }}</option>
+            {% for opt in parent_options or [] %}
+              <option value="{{ opt.id }}" {% if form.get('parent_market_id')|string == opt.id|string %}selected{% endif %}>
+                {{ opt.label }}
+              </option>
+            {% endfor %}
+          </select>
+          <p class="text-xs text-gray-500 mt-1">
+            {{ _('This event is only honored if the parent resolves the required way. Otherwise all buys refund at cost.') }}
+          </p>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-ink mb-1.5">
+            {{ _('Parent must resolve') }}
+          </label>
+          {% set req = form.get('parent_required_outcome', 'YES') %}
+          <label class="inline-flex items-center gap-2 mr-4 text-sm">
+            <input type="radio" name="parent_required_outcome" value="YES" {% if req == 'YES' %}checked{% endif %}>
+            <span>{{ _('YES') }}</span>
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input type="radio" name="parent_required_outcome" value="NO" {% if req == 'NO' %}checked{% endif %}>
+            <span>{{ _('NO') }}</span>
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <label for="description" class="block text-sm font-semibold text-ink mb-1.5">{{ _('Description') }}</label>
+        <textarea id="description" name="description" rows="4"
+                  placeholder="{{ _('How this resolves, edge cases, data source notes.') }}"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">{{ form.get('description', '') }}</textarea>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="category" class="block text-sm font-semibold text-ink mb-1.5">{{ _('Category') }}</label>
+          <input type="text" id="category" name="category" maxlength="64"
+                 value="{{ form.get('category', '') }}"
+                 placeholder="{{ _('e.g. climate, ai, markets') }}"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+        </div>
+        <div>
+          <label for="resolution_source" class="block text-sm font-semibold text-ink mb-1.5">{{ _('Resolution Source') }}</label>
+          <input type="text" id="resolution_source" name="resolution_source" maxlength="255"
+                 value="{{ form.get('resolution_source', '') }}"
+                 placeholder="{{ _('e.g. S&P Dow Jones Indices') }}"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="close_time" class="block text-sm font-semibold text-ink mb-1.5">
+            {{ _('Close time') }} <span class="text-gray-400 font-normal">({{ _('trading stops') }})</span>
+          </label>
+          <input type="datetime-local" id="close_time" name="close_time"
+                 value="{{ form.get('close_time', '') }}"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+        </div>
+        <div>
+          <label for="resolution_time" class="block text-sm font-semibold text-ink mb-1.5">
+            {{ _('Resolution time') }} <span class="text-gray-400 font-normal">({{ _('answer is known') }})</span>
+          </label>
+          <input type="datetime-local" id="resolution_time" name="resolution_time"
+                 value="{{ form.get('resolution_time', '') }}"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 pt-2 border-t border-gray-100">
+        <button type="submit"
+                class="inline-flex items-center rounded-lg bg-ink text-white text-sm font-medium px-4 py-2 hover:bg-slate-800">
+          {{ _('Create Event') }}
+        </button>
+        <a href="{{ url_for('index') }}" class="text-sm text-gray-500 hover:text-ink">{{ _('Cancel') }}</a>
+      </div>
+    </form>
+
+    {# ---------- RIGHT: AI-assist + tips (1/3 wide, sticky) ---------- #}
+    <aside class="lg:col-span-1 space-y-4 lg:sticky lg:top-20 self-start">
+
+      {# --- AI assist panel --- #}
+      <div class="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-600 text-white">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2l2.4 5.4L20 8l-4.2 3.8L17 18l-5-3-5 3 1.2-6.2L4 8l5.6-.6L12 2z"/>
+            </svg>
+          </span>
+          <h2 class="text-sm font-semibold text-ink">{{ _('AI-assisted draft') }}</h2>
+        </div>
+        <p class="text-xs text-gray-600 mb-3">
+          {{ _('Describe what you want to predict — we\'ll draft a title, description, category, and dates. Review and edit before creating.') }}
+        </p>
+
+        <textarea id="ai-prompt" rows="4"
+                  placeholder="{{ _('e.g. Will BTC hit $200k before the end of 2026?') }}"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 bg-white"></textarea>
+
+        <button type="button" id="ai-suggest-btn"
+                class="mt-3 w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium px-4 py-2 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition">
+          <svg id="ai-spinner" class="w-4 h-4 hidden animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56" stroke-linecap="round"/>
+          </svg>
+          <svg id="ai-icon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>
+            <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z"/>
+          </svg>
+          <span id="ai-btn-label">{{ _('Draft with AI') }}</span>
+        </button>
+
+        <p id="ai-status" class="text-xs text-gray-500 mt-2 hidden"></p>
+      </div>
+
+      {# --- Tips card --- #}
+      <div class="rounded-2xl border border-gray-200 bg-white p-5 text-sm text-gray-600 space-y-2">
+        <h3 class="text-sm font-semibold text-ink">{{ _('Tips for a good event') }}</h3>
+        <ul class="list-disc pl-5 space-y-1 text-xs">
+          <li>{{ _('Make the resolution objective — a public number, official announcement, or on-chain fact.') }}</li>
+          <li>{{ _('Name a specific data source (e.g. Bloomberg, NHC, CoinGecko).') }}</li>
+          <li>{{ _('Set a close time before the outcome is known; resolution time after.') }}</li>
+          <li>{{ _('Use CATEGORICAL for “which one wins”, SCALAR for “how much”, BINARY for yes/no.') }}</li>
+        </ul>
+      </div>
+
+    </aside>
+  </div>
+
+  <script>
+    // Toggle the type-specific input groups when the event_type dropdown changes.
+    (function () {
+      const sel = document.getElementById('event_type');
+      const grpCat = document.getElementById('candidates-group');   // CATEGORICAL + GROUPED
+      const grpSca = document.getElementById('scalar-group');       // SCALAR
+      const grpCon = document.getElementById('conditional-group');  // CONDITIONAL
+      if (!sel) return;
+      function sync() {
+        const v = sel.value;
+        if (grpCat) grpCat.classList.toggle('hidden', !(v === 'CATEGORICAL' || v === 'GROUPED'));
+        if (grpSca) grpSca.classList.toggle('hidden', v !== 'SCALAR');
+        if (grpCon) grpCon.classList.toggle('hidden', v !== 'CONDITIONAL');
+      }
+      sel.addEventListener('change', sync);
+      sync();
+    })();
+
+    // AI-assist: POST the user prompt to the server, fill the form on
+    // success. All fields stay editable — this is a draft, not a submit.
+    (function () {
+      const btn   = document.getElementById('ai-suggest-btn');
+      const promptEl = document.getElementById('ai-prompt');
+      const status = document.getElementById('ai-status');
+      const spinner = document.getElementById('ai-spinner');
+      const icon = document.getElementById('ai-icon');
+      const label = document.getElementById('ai-btn-label');
+      if (!btn || !promptEl) return;
+
+      function setBusy(busy) {
+        btn.disabled = busy;
+        spinner.classList.toggle('hidden', !busy);
+        icon.classList.toggle('hidden', busy);
+        label.textContent = busy ? '{{ _("Drafting…") }}' : '{{ _("Draft with AI") }}';
+      }
+      function showStatus(msg, isError) {
+        status.textContent = msg;
+        status.classList.remove('hidden');
+        status.classList.toggle('text-red-600', !!isError);
+        status.classList.toggle('text-emerald-700', !isError);
+      }
+      function setVal(id, val) {
+        const el = document.getElementById(id);
+        if (el && val !== undefined && val !== null && val !== '') el.value = val;
+      }
+      function flash(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.add('ring-2', 'ring-emerald-400');
+        setTimeout(() => el.classList.remove('ring-2', 'ring-emerald-400'), 1200);
+      }
+
+      btn.addEventListener('click', async () => {
+        const prompt = (promptEl.value || '').trim();
+        if (!prompt) {
+          showStatus('{{ _("Type what you want to predict first.") }}', true);
+          return;
+        }
+        setBusy(true);
+        status.classList.add('hidden');
+        try {
+          const resp = await fetch('{{ url_for("ai_suggest_event") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({prompt}),
+          });
+          const data = await resp.json();
+          if (!resp.ok) {
+            showStatus(data.error || '{{ _("Draft failed.") }}', true);
+            return;
+          }
+
+          // Set event type FIRST so the dependent groups become visible
+          // before we populate their inputs.
+          const typeSel = document.getElementById('event_type');
+          if (typeSel && data.event_type) {
+            typeSel.value = data.event_type;
+            typeSel.dispatchEvent(new Event('change'));
+          }
+
+          setVal('title', data.title);
+          setVal('description', data.description);
+          setVal('category', data.category);
+          setVal('resolution_source', data.resolution_source);
+          setVal('close_time', data.close_time);
+          setVal('resolution_time', data.resolution_time);
+          setVal('scalar_unit', data.scalar_unit);
+
+          if (Array.isArray(data.candidates) && data.candidates.length) {
+            const ta = document.getElementById('candidates');
+            if (ta) { ta.value = data.candidates.join('\n'); flash('candidates'); }
+          }
+          if (Array.isArray(data.buckets) && data.buckets.length) {
+            const ta = document.getElementById('buckets');
+            if (ta) { ta.value = data.buckets.join('\n'); flash('buckets'); }
+          }
+
+          ['title', 'description', 'category', 'resolution_source',
+           'close_time', 'resolution_time', 'scalar_unit'].forEach(flash);
+
+          showStatus('{{ _("Draft filled in — review and edit as needed.") }}', false);
+        } catch (e) {
+          showStatus('{{ _("Draft failed:") }} ' + e, true);
+        } finally {
+          setBusy(false);
+        }
+      });
+
+      // Cmd/Ctrl+Enter inside the prompt textarea = submit.
+      promptEl.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+          e.preventDefault();
+          btn.click();
+        }
+      });
+    })();
+  </script>
+
+{% endblock %}

@@ -1,0 +1,691 @@
+{% extends "base.html" %}
+{% block title %}{{ _(event.title) }} · ForecastArena{% endblock %}
+
+{# Event-type flags are declared at template scope (not inside a block) so
+   both `content` and `scripts` blocks can read them. Jinja `{% set %}`
+   inside a `{% block %}` is only visible within that block. #}
+{% set is_categorical = event.event_type.value == 'CATEGORICAL' %}
+{% set is_scalar      = event.event_type.value == 'SCALAR' %}
+{% set is_grouped     = event.event_type.value == 'GROUPED' %}
+{% set is_conditional = event.event_type.value == 'CONDITIONAL' %}
+{% set is_multi       = is_categorical or is_scalar or is_grouped %}
+{# is_multi covers events with N independent-ish tradeable sub-markets.
+   CONDITIONAL is still single-market (like BINARY) but has a parent link. #}
+
+{# Chart.js is only referenced from this page — load it here (deferred)
+   instead of from base.html so index/leaderboard/etc. don't pay the
+   200 KB blocking-download cost. #}
+{% block head %}
+  <script defer src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+{% endblock %}
+
+{# --- i18n label maps for enum-like dynamic values ---------------- #}
+{% set action_labels = {
+     'BUY_YES':    _('BUY YES'),
+     'BUY_NO':     _('BUY NO'),
+     'SELL_YES':   _('SELL YES'),
+     'SELL_NO':    _('SELL NO'),
+     'FLIP_YES':   _('FLIP → YES'),
+     'FLIP_NO':    _('FLIP → NO'),
+     'AUTO_MERGE': _('AUTO MERGE'),
+     'HOLD':       _('HOLD'),
+} %}
+{% set strategy_labels = {
+     'random':        _('Random'),
+     'momentum':      _('Momentum'),
+     'contrarian':    _('Contrarian'),
+     'news_research': _('News Research'),
+} %}
+
+{% block content %}
+
+  <div class="mb-4">
+    <a href="{{ url_for('index') }}" class="text-sm text-gray-500 hover:text-ink">&larr; {{ _('All markets') }}</a>
+  </div>
+
+  {% set status_class = 'open' if event.status.value == 'OPEN' else ('closed' if event.status.value == 'CLOSED' else 'resolved') %}
+  {% set status_label = _('OPEN') if event.status.value == 'OPEN' else (_('CLOSED') if event.status.value == 'CLOSED' else _('RESOLVED')) %}
+  {% set yes = prices.yes_price %}
+  {% set no  = prices.no_price  %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    {# =============== LEFT COLUMN ================================= #}
+    <div class="lg:col-span-2 space-y-6">
+
+      {# --- Title / meta --- #}
+      <div>
+        <div class="flex flex-wrap items-center gap-2 mb-2">
+          <span class="status-chip {{ status_class }}">{{ status_label }}</span>
+          {% if event.category %}
+            <span class="text-xs px-2 py-0.5 rounded-md bg-gray-100 text-gray-600">{{ _(event.category) }}</span>
+          {% endif %}
+        </div>
+        <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-ink">{{ _(event.title) }}</h1>
+        {% if event.description %}
+          <p class="mt-3 text-gray-700 leading-relaxed">{{ _(event.description) }}</p>
+        {% endif %}
+      </div>
+
+      {# --- Conditional-on panel (only for CONDITIONAL events) --- #}
+      {% if is_conditional %}
+        {% set pm = event.primary_market %}
+        {% set parent = pm.parent_market if pm else None %}
+        {% if parent %}
+          {% set parent_event = parent.event %}
+          {% set req = pm.parent_required_outcome.value if pm.parent_required_outcome else '—' %}
+          {% set parent_resolved = parent.status.value == 'RESOLVED' %}
+          {% set parent_matched  = parent_resolved and parent.outcome and parent.outcome.value == req %}
+          {% set parent_missed   = parent_resolved and parent.outcome and parent.outcome.value != req %}
+          <div class="rounded-xl border p-4
+                      {% if parent_matched %}bg-emerald-50 border-emerald-200
+                      {% elif parent_missed %}bg-amber-50 border-amber-200
+                      {% else %}bg-blue-50 border-blue-200{% endif %}">
+            <div class="text-xs uppercase tracking-wide font-semibold text-gray-500 mb-1">{{ _('Conditional on') }}</div>
+            <div class="text-sm text-ink">
+              <a href="{{ url_for('event_detail', event_id=parent_event.id) }}" class="underline decoration-gray-300 underline-offset-2 hover:text-yes">
+                {{ parent_event.title }}
+              </a>
+              {% if parent.label %} · <span class="text-gray-500">{{ parent.label }}</span>{% endif %}
+            </div>
+            <div class="text-xs text-gray-600 mt-1">
+              {% if parent_matched %}
+                {{ _('Parent resolved %(o)s — child continues normally.', o=req) }}
+              {% elif parent_missed %}
+                {{ _('Parent resolved %(actual)s (needed %(req)s) — child refunded.',
+                     actual=parent.outcome.value, req=req) }}
+              {% else %}
+                {{ _('Parent must resolve %(req)s for this child to pay out.', req=req) }}
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+      {% endif %}
+
+      {# --- Resolved banner --- #}
+      {% if event.status.value == 'RESOLVED' %}
+        {% set primary = event.primary_market %}
+        {% if is_conditional and primary and primary.outcome and primary.outcome.value == 'REFUNDED' %}
+          <div class="rounded-xl border p-4 flex items-start gap-3 bg-amber-50 border-amber-200">
+            <div class="mt-0.5">
+              <svg class="w-5 h-5 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            </div>
+            <div>
+              <div class="font-semibold text-amber-700">
+                {{ _('Refunded: parent market resolved opposite to the required outcome.') }}
+              </div>
+              <div class="text-sm text-gray-600 mt-0.5">
+                {{ _('All buys have been returned to agents at cost. Trading is closed.') }}
+              </div>
+            </div>
+          </div>
+        {% elif is_grouped %}
+          <div class="rounded-xl border p-4 flex items-start gap-3 bg-gray-50 border-gray-200">
+            <div class="mt-0.5">
+              <svg class="w-5 h-5 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div>
+              <div class="font-semibold text-ink">{{ _('All sub-markets resolved.') }}</div>
+              <div class="text-sm text-gray-600 mt-0.5">{{ _('Each resolved independently — see individual outcomes below.') }}</div>
+            </div>
+          </div>
+        {% elif is_multi %}
+          {% set winner = event.winning_market %}
+          <div class="rounded-xl border p-4 flex items-start gap-3 bg-emerald-50 border-emerald-200">
+            <div class="mt-0.5">
+              <svg class="w-5 h-5 text-yes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div>
+              <div class="font-semibold text-yes">
+                {{ _('Winner:') }} {{ winner.label if winner and winner.label else _('UNRESOLVED') }}
+                {% if is_scalar and event.scalar_unit %}
+                  <span class="text-xs text-gray-500 ml-1">{{ event.scalar_unit }}</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% else %}
+          {% set is_yes = event.outcome and event.outcome.value == 'YES' %}
+          <div class="rounded-xl border p-4 flex items-start gap-3
+                      {% if is_yes %}bg-emerald-50 border-emerald-200{% else %}bg-red-50 border-red-200{% endif %}">
+            <div class="mt-0.5">
+              {% if is_yes %}
+                <svg class="w-5 h-5 text-yes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              {% else %}
+                <svg class="w-5 h-5 text-no" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              {% endif %}
+            </div>
+            <div>
+              <div class="font-semibold {{ 'text-yes' if is_yes else 'text-no' }}">
+                {{ _('Resolved:') }}
+                {{ _('YES') if is_yes else (_('NO') if event.outcome and event.outcome.value == 'NO' else _('UNRESOLVED')) }}
+              </div>
+              {% if event.resolution_time %}
+                <div class="text-sm text-gray-600 mt-0.5">
+                  {{ _('on %(when)s · trading closed.', when=event.resolution_time.strftime('%Y-%m-%d %H:%M UTC')) }}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+      {% endif %}
+
+      {# --- Resolution facts --- #}
+      <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+          <div>
+            <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold">{{ _('Closes') }}</div>
+            <div class="mt-1 text-ink">
+              {{ event.close_time.strftime('%Y-%m-%d %H:%M') if event.close_time else '—' }}
+            </div>
+          </div>
+          <div>
+            <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold">{{ _('Resolution Source') }}</div>
+            <div class="mt-1 text-ink break-words">{{ _(event.resolution_source) if event.resolution_source else '—' }}</div>
+          </div>
+          <div>
+            <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold">{{ _('Outcome') }}</div>
+            <div class="mt-1 text-ink">
+              {% if is_multi %}
+                {% set winner = event.winning_market %}
+                {% if winner and winner.label %}
+                  {{ winner.label }}{% if is_scalar and event.scalar_unit %} <span class="text-xs text-gray-500">{{ event.scalar_unit }}</span>{% endif %}
+                {% elif event.status.value == 'RESOLVED' %}
+                  {{ _('UNRESOLVED') }}
+                {% else %}
+                  {{ _('pending') }}
+                {% endif %}
+              {% elif event.outcome %}
+                {{ _('YES') if event.outcome.value == 'YES' else (_('NO') if event.outcome.value == 'NO' else _('UNRESOLVED')) }}
+              {% else %}
+                {{ _('pending') }}
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# --- Numeric summary (SCALAR only) --- #}
+      {% if is_scalar %}
+        {% set ns = event.numeric_summary %}
+        {% if ns %}
+          <div class="rounded-xl border border-gray-200 bg-white p-4">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+              <div>
+                <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold">{{ _('Range Min') }}</div>
+                <div class="mt-1 text-ink tabular-nums">
+                  {% if ns.min is not none %}{{ '{:,g}'.format(ns.min) }}{% else %}—{% endif %}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold">{{ _('Range Max') }}</div>
+                <div class="mt-1 text-ink tabular-nums">
+                  {% if ns.max is not none %}{{ '{:,g}'.format(ns.max) }}{% else %}—{% endif %}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold">{{ _('Unit') }}</div>
+                <div class="mt-1 text-ink">{{ ns.unit or '—' }}</div>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      {% endif %}
+
+      {# --- Candidates / Buckets list (multi-market only) --- #}
+      {% if is_multi %}
+        <div class="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-semibold text-ink">
+              {{ _('Buckets') if is_scalar else _('Candidates') }}
+            </h2>
+            <span class="text-xs text-gray-500">
+              {{ _('%(n)s bucket(s)', n=markets_view|length) if is_scalar else _('%(n)s candidate(s)', n=markets_view|length) }}
+            </span>
+          </div>
+          {% if markets_view %}
+            <ul class="space-y-3">
+              {% for row in markets_view %}
+                {% set m = row.market %}
+                {% set resolved_yes = m.outcome and m.outcome.value == 'YES' %}
+                {% set resolved_no  = m.outcome and m.outcome.value == 'NO'  %}
+                {% set resolved_ref = m.outcome and m.outcome.value == 'REFUNDED' %}
+                <li>
+                  <div class="flex items-center justify-between gap-3 text-sm">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="truncate font-medium text-ink">{{ m.label or _('(unnamed)') }}</span>
+                      {% if resolved_yes %}
+                        {% if is_grouped %}
+                          <span class="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">{{ _('YES') }}</span>
+                        {% else %}
+                          <span class="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">{{ _('WINNER') }}</span>
+                        {% endif %}
+                      {% elif resolved_no %}
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">
+                          {% if is_grouped %}{{ _('NO') }}{% else %}{{ _('resolved NO') }}{% endif %}
+                        </span>
+                      {% elif resolved_ref %}
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">{{ _('REFUNDED') }}</span>
+                      {% endif %}
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0 text-gray-600">
+                      <span class="tabular-nums">{{ '%.0f'|format(row.yes_price * 100) }}%</span>
+                      <span class="text-xs text-gray-400 whitespace-nowrap">${{ '{:,.0f}'.format(row.volume) }}</span>
+                    </div>
+                  </div>
+                  <div class="mt-1.5 prob-bar" aria-hidden="true">
+                    <span style="width: {{ '%.1f'|format(row.yes_price * 100) }}%"></span>
+                  </div>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-sm text-gray-500">{{ _('No buckets yet.') if is_scalar else _('No candidates yet.') }}</p>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {# --- Probability over time chart --- #}
+      {% set has_chart = (is_multi and chart_labels|length >= 2) or (not is_multi and chart_values|length >= 2) %}
+      <div class="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold text-ink">
+            {{ _('Probability Over Time') if is_multi else _('YES Probability Over Time') }}
+          </h2>
+          <span class="text-xs text-gray-500">
+            {% if is_multi %}
+              {{ _('%(n)s sample(s) × %(k)s market(s)', n=chart_labels|length, k=chart_datasets|length) }}
+            {% else %}
+              {{ _('%(n)s update(s)', n=history|length) }}
+            {% endif %}
+          </span>
+        </div>
+        {% if has_chart %}
+          <div><canvas id="price-chart" height="180"></canvas></div>
+        {% else %}
+          <p class="text-sm text-gray-500">{{ _('Not enough price history yet.') }}</p>
+        {% endif %}
+      </div>
+
+      {# --- Recent trades --- #}
+      <div class="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <div class="px-4 sm:px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-ink">{{ _('Recent Trades') }}</h2>
+          <span class="text-xs text-gray-500">{{ _('%(n)s shown', n=trades|length) }}</span>
+        </div>
+        {% if trades %}
+          <div class="overflow-x-auto">
+            <table class="fa-table !border-0 !rounded-none">
+              <thead>
+                <tr>
+                  <th>{{ _('Time') }}</th>
+                  <th>{{ _('Agent') }}</th>
+                  {% if is_multi %}<th>{{ _('Market') }}</th>{% endif %}
+                  <th>{{ _('Action') }}</th>
+                  <th class="text-right">{{ _('Amount') }}</th>
+                  <th class="text-right">{{ _('Belief') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+              {% for t in trades %}
+                {% set act = t.action.value %}
+                {% set is_buy_yes  = act == 'BUY_YES' %}
+                {% set is_buy_no   = act == 'BUY_NO'  %}
+                {% set is_sell_yes = act == 'SELL_YES' %}
+                {% set is_sell_no  = act == 'SELL_NO'  %}
+                {% set is_auto_merge = act == 'AUTO_MERGE' %}
+                {% set is_flip_leg = t.trade_group_id is not none %}
+                <tr {% if is_flip_leg %}class="bg-indigo-50/30"{% endif %}>
+                  <td class="text-gray-500 whitespace-nowrap">{{ t.created_at.strftime('%m-%d %H:%M') }}</td>
+                  <td class="whitespace-nowrap">{{ t.agent.name if t.agent else t.agent_id }}</td>
+                  {% if is_multi %}
+                    <td class="text-gray-700 whitespace-nowrap">{{ t.market.label if t.market else '—' }}</td>
+                  {% endif %}
+                  <td>
+                    {% if is_flip_leg %}
+                      <span class="text-indigo-500 text-xs mr-1" title="{{ _('Part of a flip (paired trade)') }}">↻</span>
+                    {% endif %}
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded
+                      {% if is_buy_yes  %}bg-emerald-100 text-emerald-700
+                      {% elif is_buy_no %}bg-red-100     text-red-700
+                      {% elif is_sell_yes %}bg-emerald-50 text-emerald-600 border border-emerald-100
+                      {% elif is_sell_no  %}bg-red-50     text-red-600     border border-red-100
+                      {% elif is_auto_merge %}bg-gray-50 text-gray-500 border border-gray-200
+                      {% else %}bg-gray-100 text-gray-600{% endif %}"
+                      {% if is_auto_merge %}title="{{ _('Complementary YES+NO shares merged back to cash.') }}"{% endif %}>
+                      {{ action_labels.get(act, act) }}
+                      {% if t.fraction is not none %}<span class="opacity-75">({{ '%.0f'|format(t.fraction * 100) }}%)</span>{% endif %}
+                    </span>
+                  </td>
+                  <td class="text-right whitespace-nowrap">${{ '%.2f'|format(t.amount) }}</td>
+                  <td class="text-right whitespace-nowrap">
+                    {% if t.probability_yes is not none %}{{ '%.0f'|format(t.probability_yes * 100) }}%{% else %}—{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="text-sm text-gray-500 px-4 py-5">{{ _('No trades yet.') }}</p>
+        {% endif %}
+      </div>
+
+      {# --- Recent evidence --- #}
+      <div class="surface-card rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div class="section-header px-4 sm:px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between gap-3">
+          <div>
+            <h2 class="section-title text-sm font-semibold text-ink">{{ _('Recent Evidence') }}</h2>
+            <p class="section-subtitle text-xs text-gray-500 mt-0.5">{{ _('Latest retrieved sources for this event.') }}</p>
+          </div>
+        </div>
+        {% if evidence %}
+          <ul class="evidence-list divide-y divide-gray-100">
+            {% for e in evidence %}
+              {% set source = e.source %}
+              <li class="evidence-item p-4 sm:px-5">
+                <div class="evidence-meta flex items-center justify-between gap-3 text-xs text-gray-500 mb-1">
+                  <span class="truncate">
+                    {{ e.retrieved_at.strftime('%Y-%m-%d %H:%M') }}
+                    {% if source and source.source_domain %} · {{ source.source_domain }}{% endif %}
+                  </span>
+                  <span class="flex items-center gap-1.5 shrink-0">
+                    {% if e.stance %}<span class="stance-chip stance-{{ e.stance|lower }}">{{ e.stance }}</span>{% endif %}
+                    <span>{{ _('impact') }} {{ '%.2f'|format(e.impact or 0) }}</span>
+                  </span>
+                </div>
+                <div class="evidence-title font-medium text-sm text-ink leading-snug">
+                  {% if source and source.canonical_url %}
+                    <a href="{{ source.canonical_url }}" target="_blank" rel="noopener noreferrer" class="text-ink hover:text-yes underline decoration-gray-200 underline-offset-2">
+                      {{ source.title or source.canonical_url }}
+                    </a>
+                  {% else %}
+                    {{ source.title if source and source.title else '—' }}
+                  {% endif %}
+                </div>
+                {% if source and source.cleaned_text %}
+                  <p class="evidence-summary text-sm text-gray-600 mt-1 leading-relaxed">
+                    {{ source.cleaned_text[:280] }}{% if source.cleaned_text|length > 280 %}…{% endif %}
+                  </p>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty-state text-sm text-gray-500 px-4 py-5">
+            {{ _('No evidence retrieved yet.') }}
+          </p>
+        {% endif %}
+      </div>
+    </div>
+
+    {# =============== RIGHT COLUMN (STICKY) ======================= #}
+    <aside class="lg:col-span-1">
+      <div class="sticky-panel trade-panel lg:sticky lg:top-20">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-ink">
+            {% if is_multi %}{{ _('Leaderboard') }}{% else %}{{ _('Current Probability') }}{% endif %}
+          </h2>
+          <span class="status-chip {{ status_class }}">{{ status_label }}</span>
+        </div>
+
+        {% if is_multi %}
+          {% set top_n = 5 %}
+          <ul class="mt-3 space-y-2.5">
+            {% for row in markets_view[:top_n] %}
+              {% set m = row.market %}
+              {% set resolved_yes = m.outcome and m.outcome.value == 'YES' %}
+              <li>
+                <div class="flex items-center justify-between gap-2 text-sm">
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <span class="truncate {{ 'text-yes font-semibold' if resolved_yes else 'text-ink' }}">{{ m.label or _('(unnamed)') }}</span>
+                    {% if resolved_yes %}<span class="text-xs text-yes">✓</span>{% endif %}
+                  </div>
+                  <span class="tabular-nums shrink-0 {{ 'text-yes font-semibold' if resolved_yes else 'text-gray-700' }}">
+                    {{ '%.0f'|format(row.yes_price * 100) }}%
+                  </span>
+                </div>
+                <div class="mt-1 prob-bar" aria-hidden="true">
+                  <span style="width: {{ '%.1f'|format(row.yes_price * 100) }}%"></span>
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+          {% if markets_view|length > top_n %}
+            <p class="mt-2 text-xs text-gray-500">
+              {{ _('+ %(n)s more candidate(s)', n=(markets_view|length - top_n)) }}
+            </p>
+          {% endif %}
+        {% else %}
+          <div class="prob-block">
+            <div class="yes">
+              <div class="label">{{ _('YES') }}</div>
+              <div class="value">{{ '%.0f'|format(yes * 100) }}%</div>
+            </div>
+            <div class="no">
+              <div class="label">{{ _('NO') }}</div>
+              <div class="value">{{ '%.0f'|format(no * 100) }}%</div>
+            </div>
+          </div>
+
+          <div class="mt-3 prob-bar" aria-hidden="true">
+            <span style="width: {{ '%.1f'|format(yes * 100) }}%"></span>
+          </div>
+        {% endif %}
+
+        <dl class="mt-5 space-y-2.5 text-sm">
+          <div class="flex justify-between gap-3">
+            <dt class="text-gray-500">{{ _('Closes') }}</dt>
+            <dd class="text-ink text-right">{{ event.close_time.strftime('%Y-%m-%d %H:%M') if event.close_time else '—' }}</dd>
+          </div>
+          <div class="flex justify-between gap-3">
+            <dt class="text-gray-500">{{ _('Volume') }}</dt>
+            <dd class="text-ink text-right">${{ '{:,.0f}'.format(event_volume) }}</dd>
+          </div>
+          <div class="flex justify-between gap-3">
+            <dt class="text-gray-500">{{ _('Trades') }}</dt>
+            <dd class="text-ink text-right">{{ trades|length }}</dd>
+          </div>
+          {% if event.status.value == 'RESOLVED' %}
+            <div class="flex justify-between gap-3">
+              <dt class="text-gray-500">{{ _('Outcome') }}</dt>
+              {% if is_multi %}
+                {% set winner = event.winning_market %}
+                <dd class="text-right text-yes">
+                  {{ winner.label if winner and winner.label else _('UNRESOLVED') }}{% if is_scalar and event.scalar_unit %} <span class="text-xs text-gray-500">{{ event.scalar_unit }}</span>{% endif %}
+                </dd>
+              {% else %}
+                <dd class="text-right {{ 'text-yes' if event.outcome and event.outcome.value == 'YES' else 'text-no' }}">
+                  {% if event.outcome %}
+                    {{ _('YES') if event.outcome.value == 'YES' else (_('NO') if event.outcome.value == 'NO' else _('UNRESOLVED')) }}
+                  {% else %}
+                    {{ _('UNRESOLVED') }}
+                  {% endif %}
+                </dd>
+              {% endif %}
+            </div>
+          {% endif %}
+        </dl>
+
+        {# Recent / leading agents #}
+        <div class="mt-5 pt-5 border-t border-gray-100">
+          <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-2">{{ _('Recent Agents') }}</div>
+          {% if recent_agents %}
+            <ul class="space-y-2">
+              {% for a in recent_agents %}
+                <li class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="inline-flex w-7 h-7 rounded-full bg-gray-100 items-center justify-center text-xs font-bold text-gray-600 shrink-0">
+                      {{ a.name[:1]|upper }}
+                    </span>
+                    <span class="truncate text-sm">{{ a.name }}</span>
+                  </div>
+                  {% if a.strategy_type %}
+                    <span class="agent-badge strategy-{{ a.strategy_type|lower }}">{{ strategy_labels.get(a.strategy_type|lower, a.strategy_type) }}</span>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-sm text-gray-500">{{ _('No agent activity yet.') }}</p>
+          {% endif %}
+        </div>
+
+        {% if event.status.value != 'RESOLVED' %}
+          <form method="POST" action="{{ url_for('resolve_event_view', event_id=event.id) }}"
+                class="mt-5 space-y-3"
+                onsubmit="return confirm('{{ _('Resolve this event? Winning shares will be paid out and trading closed. This cannot be undone from the UI.') }}');">
+            <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold">
+              {{ _('Resolve event') }}
+            </div>
+
+            {% if is_categorical or is_scalar %}
+              {# Winner-takes-all: pick which sub-market resolves YES. #}
+              <label class="block text-xs text-gray-600">
+                {{ _('Winning bucket') if is_scalar else _('Winning candidate') }}
+              </label>
+              <select name="winner_market_id" required
+                      class="w-full rounded-md border border-gray-300 text-sm px-2 py-1.5 bg-white">
+                <option value="" disabled selected>{{ _('— pick one —') }}</option>
+                {% for row in markets_view %}
+                  {% set m = row.market %}
+                  {% if m.status.value != 'RESOLVED' %}
+                    <option value="{{ m.id }}">{{ m.label or _('(unnamed)') }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+              {% if is_scalar and event.scalar_unit %}
+                <p class="text-xs text-gray-500">{{ _('Unit: %(u)s', u=event.scalar_unit) }}</p>
+              {% endif %}
+              <button type="submit"
+                      class="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-ink text-white text-sm font-medium px-4 py-2.5 hover:bg-slate-800 transition">
+                {{ _('Settle & pay out') }}
+              </button>
+
+            {% elif is_grouped %}
+              {# Each sub-market resolves independently. Leave a row on
+                 "—" to skip that market this round (can be resolved later). #}
+              <p class="text-xs text-gray-500">{{ _('Set an outcome per sub-market. Leave "—" to skip.') }}</p>
+              <ul class="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                {% for row in markets_view %}
+                  {% set m = row.market %}
+                  {% if m.status.value != 'RESOLVED' %}
+                    <li class="flex items-center justify-between gap-2 text-sm">
+                      <span class="truncate">{{ m.label or _('(unnamed)') }}</span>
+                      <select name="outcome_{{ m.id }}"
+                              class="rounded-md border border-gray-300 text-xs px-1.5 py-1 bg-white shrink-0">
+                        <option value="">—</option>
+                        <option value="YES">{{ _('YES') }}</option>
+                        <option value="NO">{{ _('NO') }}</option>
+                      </select>
+                    </li>
+                  {% endif %}
+                {% endfor %}
+              </ul>
+              <button type="submit"
+                      class="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-ink text-white text-sm font-medium px-4 py-2.5 hover:bg-slate-800 transition">
+                {{ _('Settle selected') }}
+              </button>
+
+            {% else %}
+              {# BINARY / CONDITIONAL — two side-by-side buttons. #}
+              <div class="grid grid-cols-2 gap-2">
+                <button type="submit" name="outcome" value="YES"
+                        class="inline-flex items-center justify-center rounded-lg bg-yes text-white text-sm font-medium px-3 py-2.5 hover:bg-emerald-700 transition">
+                  {{ _('Resolve YES') }}
+                </button>
+                <button type="submit" name="outcome" value="NO"
+                        class="inline-flex items-center justify-center rounded-lg bg-no text-white text-sm font-medium px-3 py-2.5 hover:bg-red-700 transition">
+                  {{ _('Resolve NO') }}
+                </button>
+              </div>
+            {% endif %}
+          </form>
+        {% endif %}
+      </div>
+    </aside>
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
+{% set has_binary_chart = (not is_multi) and chart_values|length >= 2 %}
+{% set has_multi_chart  = is_multi and chart_labels|length >= 2 and chart_datasets|length >= 1 %}
+{% if has_binary_chart or has_multi_chart %}
+<script>
+  // Chart.js is loaded with `defer` in {% raw %}{% block head %}{% endraw %} above,
+  // so wait for DOMContentLoaded before touching `Chart`.
+  document.addEventListener('DOMContentLoaded', function () {
+    const ctx = document.getElementById('price-chart').getContext('2d');
+    {% if has_multi_chart %}
+      const datasets = {{ chart_datasets|tojson }}.map(d => ({
+        label: d.label,
+        data: d.data,
+        borderColor: d.color,
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        pointRadius: 1.5,
+        pointBackgroundColor: d.color,
+        tension: 0.2,
+        fill: false,
+      }));
+      const showLegend = true;
+    {% else %}
+      const datasets = [{
+        label: {{ _('YES probability')|tojson }},
+        data: {{ chart_values|tojson }},
+        borderColor: '#16a34a',
+        backgroundColor: 'rgba(22, 163, 74, 0.10)',
+        borderWidth: 2,
+        pointRadius: 2,
+        pointBackgroundColor: '#16a34a',
+        tension: 0.2,
+        fill: true,
+      }];
+      const showLegend = false;
+    {% endif %}
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: {{ chart_labels|tojson }},
+        datasets: datasets,
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'nearest', intersect: false },
+        plugins: {
+          legend: {
+            display: showLegend,
+            position: 'bottom',
+            labels: { boxWidth: 10, boxHeight: 10, font: { size: 11 } },
+          },
+          tooltip: {
+            callbacks: {
+              label: (c) => {
+                const lab = c.dataset.label || {{ _('YES')|tojson }};
+                return lab + ': ' + (c.parsed.y * 100).toFixed(1) + '%';
+              },
+            }
+          }
+        },
+        scales: {
+          y: {
+            min: 0, max: 1,
+            ticks: {
+              stepSize: 0.25,
+              callback: (v) => (v * 100).toFixed(0) + '%',
+            },
+            grid: { color: '#f1f5f9' },
+          },
+          x: {
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, color: '#94a3b8' },
+            grid: { display: false },
+          },
+        },
+      },
+    });
+  });
+</script>
+{% endif %}
+{% endblock %}

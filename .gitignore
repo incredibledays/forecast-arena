@@ -1,0 +1,27 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Flask / SQLite runtime data
+instance/
+*.db
+*.db-*
+
+# Node / generated assets
+node_modules/
+npm-debug.log*
+
+# Local caches and logs
+cache/
+*.log

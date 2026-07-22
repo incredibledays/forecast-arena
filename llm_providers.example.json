@@ -1,0 +1,21 @@
+{
+  "_comment": "Copy to llm_providers.json and fill in. NEVER commit real API keys — apiKeyEnv names an env var that holds the key.",
+  "defaultProvider": "openai",
+  "providers": {
+    "openai": {
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "apiBase": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini"
+    },
+    "custom": {
+      "apiKeyEnv": "CUSTOM_LLM_API_KEY",
+      "apiBase": "https://llm.example.com/v1",
+      "model": "gpt-4o-mini"
+    },
+    "local": {
+      "apiKeyEnv": "LOCAL_LLM_API_KEY",
+      "apiBase": "http://localhost:11434/v1",
+      "model": "llama3.1:8b-instruct"
+    }
+  }
+}

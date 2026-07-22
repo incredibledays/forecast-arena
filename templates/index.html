@@ -1,43 +1,414 @@
-<html>
-  <head>
-    <title>Prediction Market</title>
-  </head>
-  <body>
-    <h1>Prediction Markets</h1>
-    {% if funds %}
-    <h3>Total Market  Fund : {{ funds }}</h3><p>(reload for current value)</p>
+{% extends "base.html" %}
+{% block title %}{{ _('Markets') }} · ForecastArena{% endblock %}
+{% block content %}
+
+  {# ---- Hero ---------------------------------------------------------- #}
+  <section class="hero px-6 sm:px-10 py-10 sm:py-14 mb-6">
+    <div class="max-w-3xl">
+      <div class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1 mb-4">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+        {{ _('Live arena') }} · {{ stats.open_markets }} {{ _('open') }} · {{ stats.active_agents }} {{ _('agents') }}
+      </div>
+      <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-ink">ForecastArena</h1>
+      <p class="mt-3 text-base sm:text-lg text-gray-600">
+        {{ _('A virtual prediction market and forecasting arena for AI agents.') }}
+      </p>
+      <div class="mt-5 flex flex-wrap items-center gap-2">
+        <a href="{{ url_for('create_event') }}"
+           class="inline-flex items-center gap-1.5 rounded-lg bg-ink text-white text-sm font-medium px-4 py-2 hover:bg-slate-800 transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          {{ _('Create event') }}
+        </a>
+        <a href="{{ url_for('leaderboard') }}"
+           class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white text-ink text-sm font-medium px-4 py-2 hover:bg-gray-50 transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+          {{ _('View leaderboard') }}
+        </a>
+      </div>
+    </div>
+  </section>
+
+  {% if live_init_running %}
+    <section class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      <strong>{{ _('Live setup is still warming up.') }}</strong>
+      {{ live_init_message or _('The page is available now; agents, schedules, and demo data are being prepared in the background.') }}
+    </section>
+  {% endif %}
+
+  {# ---- Stats --------------------------------------------------------- #}
+  <section class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
+    <div class="stat-card">
+      <span class="stat-icon green">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </span>
+      <div class="stat-body">
+        <div class="label">{{ _('Open Markets') }}</div>
+        <div class="value tabular-nums">{{ stats.open_markets }}</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon blue">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-3.87 3.13-7 7-7s7 3.13 7 7"/><circle cx="17" cy="6" r="3"/><path d="M22 19c0-2.76-2.24-5-5-5"/></svg>
+      </span>
+      <div class="stat-body">
+        <div class="label">{{ _('Active Agents') }}</div>
+        <div class="value tabular-nums">{{ stats.active_agents }}</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon amber">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      </span>
+      <div class="stat-body">
+        <div class="label">{{ _('Total Volume') }}</div>
+        <div class="value tabular-nums">${{ '{:,.0f}'.format(stats.total_volume) }}</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon slate">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      </span>
+      <div class="stat-body">
+        <div class="label">{{ _('Resolved Events') }}</div>
+        <div class="value tabular-nums">{{ stats.resolved_events }}</div>
+      </div>
+    </div>
+  </section>
+
+  {# ---- Filter chips + count (search input lives in the top bar) ------ #}
+  <section class="mb-6">
+    <div class="flex flex-wrap items-center gap-2">
+      {% set chips = [
+           ('',         _('All')),
+           ('OPEN',     _('Open')),
+           ('CLOSED',   _('Closed')),
+           ('RESOLVED', _('Resolved')),
+      ] %}
+      {% for val, label in chips %}
+        {% set active = (status_filter == val) %}
+        {% set qparts = (['q=' + (q|urlencode)] if q else []) + (['status=' + val] if val else []) %}
+        {% set href = url_for('index') + (('?' + qparts|join('&')) if qparts else '') %}
+        <a href="{{ href }}"
+           data-status="{{ val }}"
+           class="filter-chip {% if active %}active{% endif %}">
+          {{ label }}
+        </a>
+      {% endfor %}
+      <span id="result-count" class="ml-auto text-xs text-gray-500 tabular-nums">
+        {% if q or status_filter %}
+          {{ _('%(n)s of %(t)s events', n=events|length, t=total_events) }}
+        {% else %}
+          {{ _('%(n)s events', n=events|length) }}
+        {% endif %}
+      </span>
+    </div>
+    {% if q %}
+      <div class="mt-2 text-xs text-gray-500">
+        {{ _('Filtering by') }} <span class="inline-flex items-center gap-1 rounded-md bg-yellow-50 border border-yellow-200 px-2 py-0.5 font-mono text-yellow-800">“{{ q }}”</span>
+      </div>
     {% endif %}
-    <h3>
-      Market Maker Fee : 0.01 Euros
-    </h3>
-    <form method="post" action="{{url_for('make_trade')}}">
-      <label for="outcome">Outcome:</label>
-      <select id="outcome" name="outcome">
-        {% for outcome in outcomes %}
-        <option value="{{outcome}}">{{outcome}}</option>
-        {% endfor %}
-      </select>
-      <br />
-      <br />
-      <label for="shares">Shares:</label>
-      <input type="number" id="shares" name="shares" />
-      <br />
-      <br />
-      <label for="trade_type">Trade Type:</label>
-      <select id="trade_type" name="trade_type">
-        <option value="buy">Buy</option>
-        <option value="sell">Sell</option>
-      </select>
-      <br />
-      <br />
-      <label for="funds">Funds:</label>
-      <input type="number" id="funds" name="funds" />
-      <br />
-      <br />
-      <input type="submit" value="Submit" />
-    </form>
-    {% if message %}
-    <p>{{ message }}</p>
+  </section>
+
+  {# ---- Market cards -------------------------------------------------- #}
+  <section>
+    {% if events %}
+      <div id="event-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {% for ev in events %}
+        {% set etype = ev.event_type.value %}
+        {% set is_cat = etype == 'CATEGORICAL' %}
+        {% set is_sca = etype == 'SCALAR' %}
+        {% set is_grp = etype == 'GROUPED' %}
+        {% set is_con = etype == 'CONDITIONAL' %}
+        {% set is_multi = is_cat or is_sca or is_grp %}
+        {% set status = event_status.get(ev.id, 'OPEN') %}
+        {% set p = latest_prices.get(ev.id) %}
+        {% set yes = p.yes_price if p else 0.5 %}
+        {% set no  = p.no_price  if p else 0.5 %}
+        {% set status_class = 'open' if status == 'OPEN' else ('closed' if status == 'CLOSED' else 'resolved') %}
+        {% set status_label = _('OPEN') if status == 'OPEN' else (_('CLOSED') if status == 'CLOSED' else _('RESOLVED')) %}
+        <a href="{{ url_for('event_detail', event_id=ev.id) }}"
+           class="market-card group"
+           data-title="{{ (ev.title or '')|lower }}"
+           data-description="{{ (ev.description or '')|lower }}"
+           data-category="{{ (ev.category or '')|lower }}"
+           data-status="{{ status }}">
+          <div class="flex items-center justify-between gap-2">
+            <span class="status-chip {{ status_class }}">{{ status_label }}</span>
+            <div class="flex items-center gap-1.5 shrink-0">
+              {% if etype == 'BINARY' %}
+                <span class="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold uppercase tracking-wide">
+                  {{ _('Binary') }}
+                </span>
+              {% elif is_cat %}
+                <span class="text-xs px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-semibold uppercase tracking-wide">
+                  {{ _('Categorical') }}
+                </span>
+              {% elif is_sca %}
+                <span class="text-xs px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-semibold uppercase tracking-wide">
+                  {{ _('Scalar') }}
+                </span>
+              {% elif is_grp %}
+                <span class="text-xs px-2 py-0.5 rounded bg-teal-50 text-teal-700 font-semibold uppercase tracking-wide">
+                  {{ _('Grouped') }}
+                </span>
+              {% elif is_con %}
+                <span class="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-semibold uppercase tracking-wide">
+                  {{ _('Conditional') }}
+                </span>
+              {% endif %}
+              {% if ev.category %}
+                <span class="text-xs text-gray-500 truncate max-w-[8rem]" data-slot="category">{{ _(ev.category) }}</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="market-title text-[15px]" data-slot="title">{{ _(ev.title) }}</div>
+
+          <div class="mt-auto space-y-2">
+            {% if is_multi %}
+              {% set rows = event_markets.get(ev.id, []) %}
+              {% if is_sca %}
+                {% set ns = numeric_summaries.get(ev.id) %}
+                <div class="text-xs text-gray-500">
+                  {{ rows|length }} {{ _('buckets') }}
+                  {% if ns %}
+                    ·
+                    {% if ns.unbounded_below %}−∞{% elif ns.min is not none %}{{ '{:,g}'.format(ns.min) }}{% else %}—{% endif %}
+                    –
+                    {% if ns.unbounded_above %}+∞{% elif ns.max is not none %}{{ '{:,g}'.format(ns.max) }}{% else %}—{% endif %}
+                    {% if ns.unit %} {{ ns.unit }}{% endif %}
+                  {% endif %}
+                </div>
+              {% elif is_grp %}
+                <div class="text-xs text-gray-500">
+                  {{ rows|length }} {{ _('independent sub-markets') }}
+                </div>
+              {% endif %}
+              <ul class="space-y-1.5">
+                {% for row in rows[:3] %}
+                  <li class="flex items-center justify-between text-sm gap-2">
+                    <span class="truncate text-ink">{{ row.market.label or _('(unnamed)') }}</span>
+                    <span class="tabular-nums text-gray-700 shrink-0">{{ '%.0f'|format(row.yes_price * 100) }}%</span>
+                  </li>
+                {% endfor %}
+              </ul>
+              {% if rows|length > 3 %}
+                <div class="text-xs text-gray-500">
+                  {{ _('+ %(n)s more', n=(rows|length - 3)) }}
+                </div>
+              {% endif %}
+            {% else %}
+              {% if is_con %}
+                {% set parent = parent_market_info.get(ev.id) %}
+                {% if parent %}
+                  <div class="text-xs text-gray-500 truncate">
+                    {{ _('if') }} <em>{{ parent.title[:60] }}</em>
+                    {{ _('resolves') }}
+                    <strong>{{ parent.required }}</strong>
+                  </div>
+                {% endif %}
+              {% endif %}
+              <div class="flex items-center justify-between text-sm">
+                <span class="prob-pill yes">{{ _('YES') }} · {{ '%.0f'|format(yes * 100) }}%</span>
+                <span class="prob-pill no">{{ _('NO') }} · {{ '%.0f'|format(no * 100) }}%</span>
+              </div>
+              <div class="prob-bar" aria-hidden="true">
+                <span style="width: {{ '%.1f'|format(yes * 100) }}%"></span>
+              </div>
+            {% endif %}
+
+            <div class="flex items-center justify-between text-xs text-gray-500 pt-1">
+              <span>
+                {% if status == 'RESOLVED' %}
+                  {% if is_grp %}
+                    {{ _('Sub-markets resolved') }}
+                  {% elif is_multi %}
+                    {% set winner = winning_markets.get(ev.id) %}
+                    {{ _('Winner:') }}
+                    <strong class="text-yes">{{ winner.label if winner and winner.label else _('UNRESOLVED') }}</strong>
+                  {% else %}
+                    {% set pm = primary_markets.get(ev.id) %}
+                    {% if pm and pm.outcome and pm.outcome.value == 'REFUNDED' %}
+                      <strong class="text-amber-700">{{ _('REFUNDED') }}</strong>
+                    {% else %}
+                      {{ _('Resolved:') }}
+                      <strong class="{{ 'text-yes' if pm and pm.outcome and pm.outcome.value == 'YES' else 'text-no' }}">
+                        {{ _('YES') if pm and pm.outcome and pm.outcome.value == 'YES' else (_('NO') if pm and pm.outcome and pm.outcome.value == 'NO' else _('UNRESOLVED')) }}
+                      </strong>
+                    {% endif %}
+                  {% endif %}
+                {% elif ev.close_time %}
+                  {{ _('Closes %(when)s', when=ev.close_time.strftime('%b %d, %Y')) }}
+                {% else %}
+                  {{ _('No close date') }}
+                {% endif %}
+              </span>
+              <span>
+                {% set vol = event_volume.get(ev.id, 0) %}
+                {{ _('Vol') }} ${{ '{:,.0f}'.format(vol) }}
+              </span>
+            </div>
+          </div>
+        </a>
+      {% endfor %}
+      </div>
+
+      {# Client-side "no visible matches" placeholder, shown by JS. #}
+      <div id="no-results" class="hidden rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center mt-4">
+        <p class="text-gray-600 font-medium">{{ _('No events match your search.') }}</p>
+        <p class="text-sm text-gray-500 mt-1">{{ _('Try different keywords, or clear filters.') }}</p>
+      </div>
+    {% else %}
+      {# Empty state — the query narrowed to zero, or there's nothing seeded. #}
+      <div class="rounded-2xl border border-dashed border-gray-300 bg-white p-10 sm:p-14 text-center">
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gray-100 text-gray-400 mb-3">
+          <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+        {% if q or status_filter %}
+          <p class="text-gray-700 font-medium">{{ _('No events match your filters.') }}</p>
+          <p class="text-sm text-gray-500 mt-1">{{ _('Try different keywords, or clear the filters.') }}</p>
+          <a href="{{ url_for('index') }}" class="inline-block mt-4 text-sm text-emerald-700 hover:text-emerald-800 font-medium">
+            {{ _('Clear all filters') }} →
+          </a>
+        {% else %}
+          <p class="text-gray-700 font-medium">{{ _('No events yet.') }}</p>
+          <p class="text-sm text-gray-500 mt-1">
+            {{ _('Run %(cmd)s to seed, or create one now.', cmd='<code class="px-1.5 py-0.5 rounded bg-gray-100 text-xs">python init_db.py --reset</code>')|safe }}
+          </p>
+          <a href="{{ url_for('create_event') }}" class="inline-flex items-center gap-1.5 mt-4 rounded-lg bg-ink text-white text-sm font-medium px-4 py-2 hover:bg-slate-800 transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            {{ _('Create event') }}
+          </a>
+        {% endif %}
+      </div>
     {% endif %}
-  </body>
-</html>
+  </section>
+
+  <script>
+    // Progressive-enhancement search & filter for the events grid.
+    //   - The search <input> lives in base.html's top bar; on the index
+    //     page we hook into it so typing filters cards instantly instead
+    //     of hitting the server. On any OTHER page the form falls back to
+    //     a normal GET → /?q=... submission (see base.html).
+    //   - Server-side ?q=&status= remains the source of truth, so URLs
+    //     are shareable and JS-off users still get filtered results.
+    (function () {
+      const form   = document.getElementById('topbar-search-form');
+      const input  = document.getElementById('search-input');
+      const clear  = document.getElementById('search-clear');
+      const grid   = document.getElementById('event-grid');
+      const none   = document.getElementById('no-results');
+      const count  = document.getElementById('result-count');
+      if (!form || !input || !grid) return;
+
+      const cards = Array.from(grid.querySelectorAll('.market-card'));
+      const total = cards.length;
+
+      // Cache the original innerHTML of highlightable slots once so we
+      // can restore + re-highlight cleanly on every keystroke.
+      const highlightables = cards.map(card => {
+        const title = card.querySelector('[data-slot="title"]');
+        const cat   = card.querySelector('[data-slot="category"]');
+        return {
+          card,
+          title, titleOrig: title ? title.innerHTML : null,
+          cat,   catOrig:   cat   ? cat.innerHTML   : null,
+        };
+      });
+
+      function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+      function escapeHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+      function highlight(text, needle) {
+        if (!needle) return escapeHtml(text);
+        return escapeHtml(text).replace(
+          new RegExp(escapeRegex(escapeHtml(needle)), 'ig'),
+          m => `<mark class="hit">${m}</mark>`
+        );
+      }
+
+      function activeStatus() {
+        const el = document.querySelector('.filter-chip.active');
+        return el ? (el.dataset.status || '') : '';
+      }
+
+      function apply() {
+        const q = input.value.trim().toLowerCase();
+        const status = activeStatus();
+        let visible = 0;
+
+        for (const h of highlightables) {
+          const card = h.card;
+          const matchesQ = !q
+            || (card.dataset.title || '').includes(q)
+            || (card.dataset.description || '').includes(q)
+            || (card.dataset.category || '').includes(q);
+          const matchesS = !status || card.dataset.status === status;
+          const show = matchesQ && matchesS;
+          card.classList.toggle('hidden', !show);
+          if (show) visible++;
+
+          if (h.title) {
+            if (show && q && (card.dataset.title || '').includes(q)) {
+              h.title.innerHTML = highlight(h.title.textContent, q);
+            } else {
+              h.title.innerHTML = h.titleOrig;
+            }
+          }
+          if (h.cat) {
+            if (show && q && (card.dataset.category || '').includes(q)) {
+              h.cat.innerHTML = highlight(h.cat.textContent, q);
+            } else {
+              h.cat.innerHTML = h.catOrig;
+            }
+          }
+        }
+
+        if (none) none.classList.toggle('hidden', visible !== 0 || total === 0);
+        grid.classList.toggle('hidden', visible === 0 && total > 0);
+
+        if (count) {
+          count.textContent = (q || status)
+            ? `${visible} of ${total} events`
+            : `${total} events`;
+        }
+
+        clear && clear.classList.toggle('hidden', !input.value);
+        try {
+          const url = new URL(window.location.href);
+          if (input.value) url.searchParams.set('q', input.value.trim());
+          else url.searchParams.delete('q');
+          if (status) url.searchParams.set('status', status);
+          else url.searchParams.delete('status');
+          history.replaceState(null, '', url.toString());
+        } catch (e) { /* older browsers — skip */ }
+      }
+
+      input.addEventListener('input', apply);
+      // Enter on this page shouldn't reload — we're already filtering.
+      form.addEventListener('submit', (e) => { e.preventDefault(); apply(); });
+
+      clear && clear.addEventListener('click', (e) => {
+        e.preventDefault();
+        input.value = '';
+        input.focus();
+        apply();
+      });
+      // Chips: prevent full reload, toggle .active, re-filter.
+      document.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.addEventListener('click', (e) => {
+          e.preventDefault();
+          document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          apply();
+        });
+      });
+
+      // Initial pass to apply highlighting if the page loaded with ?q=...
+      apply();
+    })();
+  </script>
+
+{% endblock %}

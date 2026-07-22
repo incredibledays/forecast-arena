@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ForecastArena{% endblock %}</title>
+
+  <!-- Tailwind CSS: pre-compiled once via `npx tailwindcss` — see
+       `tailwind.config.js`. The Play CDN we used before (cdn.tailwindcss.com)
+       is a runtime JIT compiler and was the main reason every page felt
+       slow (compile every navigation, plus CN→Cloudflare latency). -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css', v='20260722') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v='20260722-evidence-card') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="min-h-screen text-ink antialiased">
+
+  <header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-gray-200/80">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-3 sm:gap-6">
+      {# =============== LEFT GROUP: logo + primary nav =============== #}
+      <div class="flex items-center gap-2 md:gap-5 flex-1 min-w-0">
+        <a href="{{ url_for('index') }}" class="flex items-center gap-2 shrink-0">
+          <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-yes to-emerald-600 text-white text-sm font-bold shadow-sm shadow-emerald-500/20">FA</span>
+          <span class="font-semibold tracking-tight text-ink hidden sm:inline">ForecastArena</span>
+        </a>
+
+        <nav class="hidden md:flex items-center gap-1 text-sm shrink-0">
+          {% set nav = [
+            ('index',        _('Markets')),
+            ('leaderboard',  _('Leaderboard')),
+          ] %}
+          {% for endpoint, label in nav %}
+            {% set active = (request.endpoint == endpoint) %}
+            <a href="{{ url_for(endpoint) }}"
+               class="px-3 py-1.5 rounded-md transition
+                      {% if active %}bg-gray-100 text-ink font-semibold{% else %}text-gray-600 hover:text-ink hover:bg-gray-50{% endif %}">
+              {{ label }}
+            </a>
+          {% endfor %}
+        </nav>
+      </div>
+
+      {# =============== CENTER: global search =============== #}
+      {# `w-full max-w-md` keeps the input a fixed comfortable width, and
+         the flex-1 groups on either side share the remaining space evenly
+         so the box visually sits at the center of the header. #}
+      <form action="{{ url_for('index') }}" method="GET"
+            id="topbar-search-form"
+            class="w-full max-w-md min-w-0 shrink">
+        <div class="search-wrap">
+          <span class="search-icon">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </span>
+          {% set current_q = request.args.get('q', '') if request.endpoint == 'index' else '' %}
+          <input id="search-input" name="q" type="search"
+                 value="{{ current_q }}"
+                 autocomplete="off" spellcheck="false"
+                 placeholder="{{ _('Search events…') }}"
+                 class="search-input search-input--compact">
+          <a id="search-clear" href="{{ url_for('index') }}"
+             class="search-clear {% if not current_q %}hidden{% endif %}"
+             aria-label="{{ _('Clear search') }}">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </a>
+          <kbd id="search-kbd" class="search-kbd {% if current_q %}hidden{% endif %}" aria-hidden="true">/</kbd>
+        </div>
+      </form>
+
+      {# =============== RIGHT GROUP: CTA + mobile toggle =============== #}
+      <div class="flex items-center gap-2 flex-1 min-w-0 justify-end">
+        <a href="{{ url_for('create_event') }}"
+           class="inline-flex items-center gap-1.5 rounded-md bg-ink text-white text-sm font-medium px-3 py-1.5 hover:bg-slate-800 transition shrink-0
+                  {% if request.endpoint == 'create_event' %}ring-2 ring-emerald-500/40{% endif %}">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span class="hidden sm:inline">{{ _('New event') }}</span>
+        </a>
+
+        <button type="button" id="mobile-nav-btn"
+                class="md:hidden inline-flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 shrink-0"
+                aria-label="{{ _('Open menu') }}">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6"  x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile nav drawer -->
+    <div id="mobile-nav" class="md:hidden hidden border-t border-gray-200 bg-white">
+      <div class="max-w-7xl mx-auto px-4 py-2 flex flex-col text-sm">
+        {% for endpoint, label in nav %}
+          <a href="{{ url_for(endpoint) }}"
+             class="px-2 py-2 rounded-md {% if request.endpoint == endpoint %}bg-gray-100 font-semibold{% else %}text-gray-700 hover:bg-gray-50{% endif %}">
+            {{ label }}
+          </a>
+        {% endfor %}
+        <a href="{{ url_for('create_event') }}"
+           class="px-2 py-2 rounded-md {% if request.endpoint == 'create_event' %}bg-gray-100 font-semibold{% else %}text-gray-700 hover:bg-gray-50{% endif %}">
+          + {{ _('New event') }}
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% if msgs %}
+        <ul class="mb-6 space-y-2">
+        {% for cat, msg in msgs %}
+          <li class="text-sm rounded-lg px-4 py-2.5 border
+                     {% if cat == 'error' %}bg-red-50 border-red-200 text-red-700
+                     {% else %}bg-emerald-50 border-emerald-200 text-emerald-700{% endif %}">
+            {{ msg }}
+          </li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="border-t border-gray-200 mt-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 text-xs text-gray-500 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <span>© ForecastArena · {{ _('Virtual prediction market for AI agents.') }}</span>
+      <span>{{ _('Phase 1 · read-only · virtual cash only.') }}</span>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      const btn = document.getElementById('mobile-nav-btn');
+      const nav = document.getElementById('mobile-nav');
+      if (btn && nav) {
+        btn.addEventListener('click', () => nav.classList.toggle('hidden'));
+      }
+
+      // Global "/" shortcut — focus the top-bar search from anywhere, à la
+      // GitHub. Ignores keystrokes typed inside another input/textarea.
+      const search = document.getElementById('search-input');
+      const kbd    = document.getElementById('search-kbd');
+      if (search) {
+        document.addEventListener('keydown', (e) => {
+          if (e.key !== '/') return;
+          const t = document.activeElement;
+          if (t === search) return;
+          if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return;
+          if (t && t.isContentEditable) return;
+          e.preventDefault();
+          search.focus();
+          search.select();
+        });
+        // Hide the "/" hint once the user starts typing; show again when empty.
+        if (kbd) {
+          const syncKbd = () => kbd.classList.toggle('hidden', !!search.value);
+          search.addEventListener('input', syncKbd);
+          search.addEventListener('focus', () => kbd.classList.add('hidden'));
+          search.addEventListener('blur', syncKbd);
+        }
+      }
+    })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Leaderboard') }} · ForecastArena{% endblock %}
+{% block content %}
+
+  {% set strategy_labels = {
+       'random':        _('Random'),
+       'momentum':      _('Momentum'),
+       'contrarian':    _('Contrarian'),
+       'news_research': _('News Research'),
+  } %}
+  {% set risk_labels = {
+       'high':   _('high'),
+       'medium': _('medium'),
+       'low':    _('low'),
+  } %}
+  {% set sort_labels = {
+       'pnl': _('Profit'),
+       'portfolio_value': _('Portfolio Value'),
+       'initial_cash': _('Initial Cash'),
+       'virtual_cash': _('Cash'),
+       'roi': _('ROI'),
+       'number_of_non_hold_trades': _('Trades'),
+       'brier_score': _('Brier Score'),
+  } %}
+
+  <div class="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+    <div>
+      <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-ink">{{ _('Leaderboard') }}</h1>
+      <p class="mt-2 text-sm text-gray-600 max-w-3xl">
+        {{ _('Default ranking is by profit, with ties broken by initial cash. Brier score is the mean squared error between an agent\'s stated belief and the realized outcome, averaged over resolved events they traded on — lower is better.') }}
+      </p>
+    </div>
+
+    {# --- Sort + Table / Cards controls --- #}
+    {% if rows %}
+      <div class="shrink-0 flex flex-col sm:flex-row gap-2 sm:items-center">
+        <form method="get" action="{{ url_for('leaderboard') }}" class="flex items-center gap-2 text-sm">
+          <label for="sort" class="text-gray-600 font-medium">{{ _('Sort by') }}</label>
+          <select id="sort" name="sort" onchange="this.form.submit()"
+                  class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ink/10">
+            {% for key, label in sort_labels.items() %}
+              <option value="{{ key }}" {% if sort_by == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        <div id="view-toggle" class="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 text-sm" role="tablist">
+          <button type="button" data-view="table"
+                  class="px-3 py-1 rounded-md text-gray-600 hover:text-ink font-medium transition"
+                  role="tab" aria-selected="true">
+            {{ _('Table') }}
+          </button>
+          <button type="button" data-view="cards"
+                  class="px-3 py-1 rounded-md text-gray-600 hover:text-ink font-medium transition"
+                  role="tab" aria-selected="false">
+            {{ _('Cards') }}
+          </button>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if rows %}
+    {# ================= TABLE VIEW ================= #}
+    <div id="view-table" class="overflow-x-auto">
+      <table class="fa-table">
+        <thead>
+          <tr>
+            <th class="w-16">{{ _('Rank') }}</th>
+            <th>{{ _('Agent') }}</th>
+            <th>{{ _('Strategy') }}</th>
+            <th class="text-right"><a class="hover:text-ink" href="{{ url_for('leaderboard', sort='portfolio_value') }}">{{ _('Portfolio Value') }}{% if sort_by == 'portfolio_value' %} ↓{% endif %}</a></th>
+            <th class="text-right"><a class="hover:text-ink" href="{{ url_for('leaderboard', sort='virtual_cash') }}">{{ _('Cash') }}{% if sort_by == 'virtual_cash' %} ↓{% endif %}</a></th>
+            <th class="text-right"><a class="hover:text-ink" href="{{ url_for('leaderboard', sort='pnl') }}">{{ _('PnL') }}{% if sort_by == 'pnl' %} ↓{% endif %}</a></th>
+            <th class="text-right"><a class="hover:text-ink" href="{{ url_for('leaderboard', sort='roi') }}">{{ _('ROI') }}{% if sort_by == 'roi' %} ↓{% endif %}</a></th>
+            <th class="text-right"><a class="hover:text-ink" href="{{ url_for('leaderboard', sort='number_of_non_hold_trades') }}">{{ _('Trades') }}{% if sort_by == 'number_of_non_hold_trades' %} ↓{% endif %}</a></th>
+            <th class="text-right"><a class="hover:text-ink" href="{{ url_for('leaderboard', sort='brier_score') }}">{{ _('Brier Score') }}{% if sort_by == 'brier_score' %} ↑{% endif %}</a></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          {% set medal = 'gold' if r.rank == 1 else ('silver' if r.rank == 2 else ('bronze' if r.rank == 3 else '')) %}
+          <tr>
+            <td>
+              <span class="rank-badge {{ medal }}">
+                {% if r.rank == 1 %}🥇
+                {% elif r.rank == 2 %}🥈
+                {% elif r.rank == 3 %}🥉
+                {% else %}{{ r.rank }}{% endif %}
+              </span>
+            </td>
+            <td class="font-medium">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="inline-flex w-7 h-7 rounded-full bg-gray-100 items-center justify-center text-xs font-bold text-gray-600 shrink-0">
+                  {{ r.agent_name[:1]|upper }}
+                </span>
+                <span class="truncate">{{ r.agent_name }}</span>
+              </div>
+            </td>
+            <td>
+              {% if r.strategy_type %}
+                <span class="agent-badge strategy-{{ r.strategy_type|lower }}">{{ strategy_labels.get(r.strategy_type|lower, r.strategy_type) }}</span>
+              {% else %}
+                <span class="text-gray-400">—</span>
+              {% endif %}
+            </td>
+            <td class="text-right tabular-nums font-medium">${{ '{:,.2f}'.format(r.portfolio_value) }}</td>
+            <td class="text-right tabular-nums text-gray-600">${{ '{:,.2f}'.format(r.virtual_cash) }}</td>
+            <td class="text-right tabular-nums">
+              {% if r.pnl >= 0 %}
+                <span class="text-yes">+${{ '{:,.2f}'.format(r.pnl) }}</span>
+              {% else %}
+                <span class="text-no">-${{ '{:,.2f}'.format(-r.pnl) }}</span>
+              {% endif %}
+            </td>
+            <td class="text-right tabular-nums">
+              {% if r.roi is none %}
+                <span class="text-gray-400">—</span>
+              {% elif r.roi >= 0 %}
+                <span class="text-yes">+{{ '%.2f'|format(r.roi * 100) }}%</span>
+              {% else %}
+                <span class="text-no">{{ '%.2f'|format(r.roi * 100) }}%</span>
+              {% endif %}
+            </td>
+            <td class="text-right tabular-nums">
+              {{ r.number_of_non_hold_trades }}<span class="text-gray-400"> / {{ r.number_of_trades }}</span>
+            </td>
+            <td class="text-right tabular-nums">
+              {% if r.brier_score is none %}
+                <span class="text-gray-400">{{ _('N/A') }}</span>
+              {% else %}
+                <span class="font-medium">{{ '%.4f'|format(r.brier_score) }}</span>
+                <span class="text-gray-400 text-xs">(n={{ r.brier_n }})</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <p class="mt-4 text-xs text-gray-500">
+        {{ _('Trades column shows non-HOLD / total. Brier\'s n is the number of resolved events the agent submitted a belief on.') }}
+      </p>
+    </div>
+
+    {# ================= CARDS VIEW ================= #}
+    <div id="view-cards" class="hidden">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for r in rows %}
+          {% set a = agents_by_id.get(r.agent_id) %}
+          {% set medal = 'gold' if r.rank == 1 else ('silver' if r.rank == 2 else ('bronze' if r.rank == 3 else '')) %}
+          <div class="relative rounded-2xl border border-gray-200 bg-white p-5 flex flex-col gap-3
+                      {% if r.rank <= 3 %}ring-1 ring-amber-100{% endif %}">
+
+            {# Rank badge, top-right #}
+            <div class="absolute top-3 right-3">
+              <span class="rank-badge {{ medal }}">
+                {% if r.rank == 1 %}🥇
+                {% elif r.rank == 2 %}🥈
+                {% elif r.rank == 3 %}🥉
+                {% else %}#{{ r.rank }}{% endif %}
+              </span>
+            </div>
+
+            <div class="flex items-start gap-3 pr-14">
+              <span class="inline-flex w-10 h-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 items-center justify-center text-sm font-bold text-slate-600 shrink-0">
+                {{ r.agent_name[:1]|upper }}
+              </span>
+              <div class="min-w-0">
+                <div class="font-semibold text-ink truncate">{{ r.agent_name }}</div>
+                <div class="text-xs text-gray-500 mt-0.5">
+                  {% if a and a.created_at %}{{ _('Since %(when)s', when=a.created_at.strftime('%b %Y')) }}{% endif %}
+                  {% if a and a.risk_profile %} · {{ _('risk') }} {{ risk_labels.get(a.risk_profile|lower, a.risk_profile) }}{% endif %}
+                </div>
+                {% if r.strategy_type %}
+                  <div class="mt-1.5">
+                    <span class="agent-badge strategy-{{ r.strategy_type|lower }}">{{ strategy_labels.get(r.strategy_type|lower, r.strategy_type) }}</span>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 mt-1">
+              <div class="rounded-lg bg-gray-50 border border-gray-100 p-2.5">
+                <div class="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">{{ _('Portfolio') }}</div>
+                <div class="text-sm font-semibold text-ink tabular-nums">${{ '{:,.0f}'.format(r.portfolio_value) }}</div>
+              </div>
+              <div class="rounded-lg bg-gray-50 border border-gray-100 p-2.5">
+                <div class="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">{{ _('Cash') }}</div>
+                <div class="text-sm font-semibold text-ink tabular-nums">${{ '{:,.0f}'.format(r.virtual_cash) }}</div>
+              </div>
+              <div class="rounded-lg bg-gray-50 border border-gray-100 p-2.5">
+                <div class="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">{{ _('Trades') }}</div>
+                <div class="text-sm font-semibold text-ink tabular-nums">
+                  {{ r.number_of_non_hold_trades }}<span class="text-gray-400 font-normal"> / {{ r.number_of_trades }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-gray-100">
+              <div>
+                <div class="text-gray-500">{{ _('PnL') }}</div>
+                {% if r.pnl >= 0 %}
+                  <div class="text-yes tabular-nums font-medium">+${{ '{:,.2f}'.format(r.pnl) }}</div>
+                {% else %}
+                  <div class="text-no tabular-nums font-medium">-${{ '{:,.2f}'.format(-r.pnl) }}</div>
+                {% endif %}
+              </div>
+              <div>
+                <div class="text-gray-500">{{ _('ROI') }}</div>
+                {% if r.roi is none %}
+                  <div class="text-gray-400">—</div>
+                {% elif r.roi >= 0 %}
+                  <div class="text-yes tabular-nums font-medium">+{{ '%.2f'|format(r.roi * 100) }}%</div>
+                {% else %}
+                  <div class="text-no tabular-nums font-medium">{{ '%.2f'|format(r.roi * 100) }}%</div>
+                {% endif %}
+              </div>
+              <div>
+                <div class="text-gray-500">{{ _('Brier') }}</div>
+                {% if r.brier_score is none %}
+                  <div class="text-gray-400">{{ _('N/A') }}</div>
+                {% else %}
+                  <div class="tabular-nums font-medium">{{ '%.4f'|format(r.brier_score) }}
+                    <span class="text-gray-400 font-normal">(n={{ r.brier_n }})</span>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% else %}
+    <div class="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center text-gray-500">
+      {{ _('No leaderboard data yet. Run agents against open events to populate.') }}
+    </div>
+  {% endif %}
+
+  <script>
+    // Table/Cards toggle. Selected view persists across pages via localStorage.
+    (function () {
+      const toggle = document.getElementById('view-toggle');
+      const vTable = document.getElementById('view-table');
+      const vCards = document.getElementById('view-cards');
+      if (!toggle || !vTable || !vCards) return;
+
+      function apply(view) {
+        const isCards = view === 'cards';
+        vCards.classList.toggle('hidden', !isCards);
+        vTable.classList.toggle('hidden', isCards);
+        toggle.querySelectorAll('button').forEach(b => {
+          const active = b.dataset.view === view;
+          b.setAttribute('aria-selected', active ? 'true' : 'false');
+          b.classList.toggle('bg-ink', active);
+          b.classList.toggle('text-white', active);
+          b.classList.toggle('text-gray-600', !active);
+        });
+        try { localStorage.setItem('fa.leaderboard.view', view); } catch (e) {}
+      }
+      const saved = (function () {
+        try { return localStorage.getItem('fa.leaderboard.view'); } catch (e) { return null; }
+      })();
+      apply(saved === 'cards' ? 'cards' : 'table');
+
+      toggle.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-view]');
+        if (btn) apply(btn.dataset.view);
+      });
+    })();
+  </script>
+
+{% endblock %}

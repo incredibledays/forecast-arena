@@ -1,0 +1,13 @@
+{
+  "name": "forecast-arena",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Flask + SQLAlchemy virtual prediction market simulator for AI agent forecasting experiments.",
+  "scripts": {
+    "test": "if [ -x .venv/bin/python ]; then .venv/bin/python -m pytest -q; else python -m pytest -q; fi",
+    "build:css": "tailwindcss -i ./tailwind.input.css -o ./static/css/tailwind.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.13"
+  }
+}

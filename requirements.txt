@@ -1,0 +1,7 @@
+Flask>=3.0
+Flask-SQLAlchemy>=3.1
+SQLAlchemy>=2.0
+python-dotenv>=1.0
+waitress>=3.0
+tavily-python>=0.5   # optional: retrieval layer; skipped gracefully if key missing
+openai>=1.40         # optional: LLM forecast for NewsResearchAgent; skipped gracefully

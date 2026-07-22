@@ -1,0 +1,433 @@
+/* ForecastArena — small custom styles that sit on top of Tailwind CDN.
+   Kept intentionally short: anything expressible as a utility class lives
+   in the template, not here. */
+
+:root {
+  --fa-green: #16a34a;      /* YES */
+  --fa-green-bg: #dcfce7;
+  --fa-red: #dc2626;        /* NO  */
+  --fa-red-bg: #fee2e2;
+  --fa-border: #e5e7eb;
+  --fa-muted: #6b7280;
+  --fa-ink: #0f172a;
+}
+
+html, body {
+  min-height: 100%;
+  color: var(--fa-ink);
+  background:
+    radial-gradient(circle at top left, rgba(22, 163, 74, 0.08), transparent 34rem),
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 42%, #f3f4f6 100%);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  letter-spacing: -0.005em;
+}
+
+p { line-height: 1.7; }
+a { text-underline-offset: 0.18em; }
+::selection { background: rgba(22, 163, 74, 0.18); }
+
+/* ---- Probability pills ------------------------------------------------ */
+.prob-pill {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  border: 1px solid transparent;
+}
+.prob-pill.yes { color: var(--fa-green); background: var(--fa-green-bg); }
+.prob-pill.no  { color: var(--fa-red);   background: var(--fa-red-bg); }
+
+.prob-bar {
+  height: 6px;
+  background: var(--fa-red-bg);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+.prob-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--fa-green);
+  border-radius: 999px;
+  transition: width 200ms ease-out;
+}
+
+/* ---- Market cards ----------------------------------------------------- */
+.market-card {
+  background: #fff;
+  border: 1px solid var(--fa-border);
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+  display: flex; flex-direction: column; gap: 0.75rem;
+  min-height: 190px;
+}
+.market-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px -6px rgba(15, 23, 42, 0.12);
+  border-color: #d1d5db;
+}
+.market-card .market-title {
+  font-weight: 600; color: var(--fa-ink);
+  line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- Agent badges ----------------------------------------------------- */
+.agent-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+.agent-badge.strategy-value      { background: #ecfeff; color: #0e7490; border-color: #cffafe; }
+.agent-badge.strategy-momentum   { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.agent-badge.strategy-contrarian { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
+.agent-badge.strategy-news       { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.agent-badge.strategy-llm        { background: #fce7f3; color: #9d174d; border-color: #fbcfe8; }
+
+/* ---- Status chips ----------------------------------------------------- */
+.status-chip {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem; font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.status-chip::before {
+  content: ""; display: inline-block;
+  width: 6px; height: 6px; border-radius: 999px;
+  background: currentColor;
+}
+.status-chip.open     { color: #166534; background: #dcfce7; }
+.status-chip.closed   { color: #92400e; background: #fef3c7; }
+.status-chip.resolved { color: #334155; background: #e2e8f0; }
+
+/* ---- Table styling ---------------------------------------------------- */
+.fa-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #fff;
+  border: 1px solid var(--fa-border);
+  border-radius: 12px;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+.fa-table thead th {
+  text-align: left;
+  padding: 0.7rem 0.9rem;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  border-bottom: 1px solid var(--fa-border);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.fa-table tbody td {
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: var(--fa-ink);
+}
+.fa-table tbody tr:last-child td { border-bottom: none; }
+.fa-table tbody tr:hover td { background: #fafbfc; }
+
+/* ---- Trading / status panel ------------------------------------------ */
+.trade-panel {
+  background: #fff;
+  border: 1px solid var(--fa-border);
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.trade-panel .prob-block {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 0.6rem; margin-top: 0.5rem;
+}
+.trade-panel .prob-block > div {
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  text-align: center;
+  border: 1px solid var(--fa-border);
+}
+.trade-panel .prob-block .yes { background: var(--fa-green-bg); border-color: #bbf7d0; }
+.trade-panel .prob-block .no  { background: var(--fa-red-bg);   border-color: #fecaca; }
+.trade-panel .prob-block .label { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.05em; }
+.trade-panel .prob-block .value { font-size: 1.4rem; font-weight: 700; margin-top: 0.15rem; }
+.trade-panel .prob-block .yes .label,
+.trade-panel .prob-block .yes .value { color: var(--fa-green); }
+.trade-panel .prob-block .no  .label,
+.trade-panel .prob-block .no  .value { color: var(--fa-red); }
+
+/* ---- Rank badges ------------------------------------------------------ */
+.rank-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.85rem; height: 1.85rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #334155;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+.rank-badge.gold   { background: #fef3c7; color: #92400e; }
+.rank-badge.silver { background: #e2e8f0; color: #334155; }
+.rank-badge.bronze { background: #fee2e2; color: #9a3412; }
+
+/* ---- Misc ------------------------------------------------------------- */
+.text-yes { color: var(--fa-green); font-weight: 600; }
+.text-no  { color: var(--fa-red);   font-weight: 600; }
+.muted    { color: var(--fa-muted); }
+
+.hero {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(22,163,74,0.10), transparent 45%),
+    radial-gradient(circle at 90% 20%, rgba(220,38,38,0.08), transparent 45%),
+    linear-gradient(180deg, #ffffff, #fafafa);
+  border: 1px solid var(--fa-border);
+  border-radius: 20px;
+  position: relative;
+  overflow: hidden;
+}
+.hero::after {
+  /* Subtle grid pattern that fades into the gradient. Purely decorative. */
+  content: "";
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(15,23,42,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15,23,42,0.03) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+  pointer-events: none;
+}
+.hero > * { position: relative; z-index: 1; }
+
+.stat-card {
+  background: #fff;
+  border: 1px solid var(--fa-border);
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+  display: flex; align-items: center; gap: 0.85rem;
+}
+.stat-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px -6px rgba(15, 23, 42, 0.10);
+  border-color: #d1d5db;
+}
+.stat-card .stat-icon {
+  width: 2.25rem; height: 2.25rem; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
+}
+.stat-card .stat-icon svg { width: 1.15rem; height: 1.15rem; }
+.stat-card .stat-icon.green  { background: #dcfce7; color: #166534; }
+.stat-card .stat-icon.blue   { background: #dbeafe; color: #1d4ed8; }
+.stat-card .stat-icon.amber  { background: #fef3c7; color: #92400e; }
+.stat-card .stat-icon.slate  { background: #e2e8f0; color: #334155; }
+.stat-card .stat-body { min-width: 0; }
+.stat-card .label { font-size: 0.72rem; color: var(--fa-muted); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.stat-card .value { font-size: 1.5rem; font-weight: 700; margin-top: 0.15rem; line-height: 1.1; }
+
+/* ---- Search + filter chips ------------------------------------------- */
+.search-wrap {
+  position: relative;
+}
+.search-input {
+  width: 100%;
+  border: 1px solid var(--fa-border);
+  background: #fff;
+  border-radius: 12px;
+  padding: 0.7rem 2.5rem 0.7rem 2.6rem;
+  font-size: 0.95rem;
+  color: var(--fa-ink);
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+.search-input::placeholder { color: #9ca3af; }
+.search-input:focus {
+  outline: none;
+  border-color: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+}
+/* Compact variant used inside the sticky top bar. */
+.search-input--compact {
+  padding: 0.4rem 2.25rem 0.4rem 2.25rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  background: #f8fafc;
+}
+.search-input--compact:focus { background: #fff; }
+.search-icon {
+  position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%);
+  color: #9ca3af; pointer-events: none;
+  display: inline-flex; align-items: center;
+}
+.search-clear {
+  position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%);
+  width: 1.5rem; height: 1.5rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; color: #6b7280;
+  transition: background 120ms ease, color 120ms ease;
+}
+.search-clear:hover { background: #e2e8f0; color: var(--fa-ink); }
+/* Keyboard hint chip (like GitHub's "/" shortcut). Hidden while typing. */
+.search-kbd {
+  position: absolute; right: 0.55rem; top: 50%; transform: translateY(-50%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid #e5e7eb;
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  color: #94a3b8;
+  background: #fff;
+  pointer-events: none;
+  user-select: none;
+}
+/* On very narrow viewports the shortcut chip crowds the input — hide it. */
+@media (max-width: 640px) {
+  .search-kbd { display: none; }
+}
+
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--fa-border);
+  background: #fff;
+  color: #475569;
+  font-size: 0.82rem; font-weight: 500;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  cursor: pointer;
+}
+.filter-chip:hover { background: #f8fafc; border-color: #cbd5e1; color: var(--fa-ink); }
+.filter-chip.active {
+  background: var(--fa-ink);
+  border-color: var(--fa-ink);
+  color: #fff;
+}
+.filter-chip .count {
+  font-size: 0.72rem;
+  color: inherit;
+  opacity: 0.7;
+  font-weight: 600;
+}
+
+/* Highlight matches inside cards while a search is active. */
+mark.hit {
+  background: #fef08a;
+  color: inherit;
+  padding: 0 0.1em;
+  border-radius: 3px;
+}
+
+/* Sticky panel is set via Tailwind (sticky top-24) but we guard for small screens */
+@media (max-width: 1023px) {
+  .sticky-panel { position: static !important; }
+}
+
+/* ---- Shared surfaces + typography ------------------------------------ */
+.surface-card {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 18px;
+  box-shadow: 0 10px 30px -24px rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(8px);
+}
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #f1f5f9;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.85), rgba(255, 255, 255, 0.88));
+}
+.section-title {
+  color: var(--fa-ink);
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.section-subtitle {
+  margin-top: 0.15rem;
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+.empty-state {
+  padding: 1.25rem;
+  color: #64748b;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+/* ---- Evidence list ---------------------------------------------------- */
+.evidence-list { margin: 0; padding: 0; list-style: none; }
+.evidence-item {
+  padding: 1rem 1.25rem;
+  border-top: 1px solid #f1f5f9;
+}
+.evidence-item:first-child { border-top: 0; }
+.evidence-item:hover { background: rgba(248, 250, 252, 0.72); }
+.evidence-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+  color: #64748b;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+.evidence-title {
+  color: var(--fa-ink);
+  font-size: 0.93rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+.evidence-title a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: #cbd5e1;
+}
+.evidence-title a:hover {
+  color: var(--fa-green);
+  text-decoration-color: rgba(22, 163, 74, 0.45);
+}
+.evidence-summary {
+  margin-top: 0.45rem;
+  color: #475569;
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+.stance-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.08rem 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+}
+.stance-chip.stance-support { background: #dcfce7; border-color: #bbf7d0; color: #166534; }
+.stance-chip.stance-refute { background: #fee2e2; border-color: #fecaca; color: #991b1b; }
+.stance-chip.stance-neutral { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
