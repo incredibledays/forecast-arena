@@ -42,7 +42,7 @@ import os
 import sys
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
@@ -73,6 +73,11 @@ except AttributeError:
 
 # 优雅关闭:主线程和后台线程共享一个 Event。ctrl-c 触发 handler 后 set。
 _STOP = threading.Event()
+
+
+def _utcnow() -> datetime:
+    """Return naive UTC timestamps for existing SQLAlchemy DateTime columns."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 # SQLite has exactly one writer. Running tick/natural/worker as separate
 # threads is fine for wall-clock orchestration, but letting them enter write
@@ -298,7 +303,7 @@ def _bootstrap_or_init(args) -> bool:
             ev = Event(
                 title=title, description="", category=cat,
                 event_type=EventType.BINARY,
-                close_time=datetime.utcnow() + timedelta(days=90),
+                close_time=_utcnow() + timedelta(days=90),
                 resolution_source="demo",
             )
             db.session.add(ev); db.session.flush()
@@ -350,7 +355,7 @@ def _bootstrap_or_init(args) -> bool:
                   file=sys.stderr)
             arch_ids = [r[0] for r in db.session.query(AgentArchetype.id).all()]
             rows = []
-            now = datetime.utcnow()
+            now = _utcnow()
             for arch_id in arch_ids:
                 # 让不同 archetype 有不同信念:一些乐观 (>0.7),一些悲观 (<0.4),
                 # 制造真实的市场分歧。用 archetype_id 的哈希做种子,确定性。
@@ -598,7 +603,7 @@ def _maintenance_once(*, terminal_keep_hours: float,
 
     # 1) A crash/KeyboardInterrupt can leave tasks CLAIMED forever. Requeue
     # stale claims so the worker can retry them later.
-    claimed_timeout = datetime.utcnow() - timedelta(
+    claimed_timeout = _utcnow() - timedelta(
         minutes=max(1.0, float(claimed_timeout_minutes))
     )
     res = db.session.execute(text(
@@ -616,7 +621,7 @@ def _maintenance_once(*, terminal_keep_hours: float,
 
     # 2) Terminal WakeUpTask rows are operational logs. Keep recent ones for
     # debugging, delete older ones so dedup/status indexes stay small.
-    terminal_cutoff = datetime.utcnow() - timedelta(
+    terminal_cutoff = _utcnow() - timedelta(
         hours=max(0.1, float(terminal_keep_hours))
     )
     res = db.session.execute(text(
