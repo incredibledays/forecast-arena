@@ -4,6 +4,8 @@
 
 ForecastArena is a Flask + SQLAlchemy virtual prediction-market simulator for AI-agent forecasting experiments. It models each forecast event as one or more binary YES/NO markets, prices trades with Hanson's LMSR market maker, and supports evidence retrieval, LLM-assisted belief updates, scheduled agent wake-ups, trade execution, settlement, and leaderboard scoring.
 
+![ForecastArena dashboard](docs/default.jpg)
+
 The project is intended as a **local demo and research prototype**. By default it uses SQLite, and all cash, shares, trades, and payouts are virtual.
 
 ## Features
