@@ -314,4 +314,4 @@ python -m compileall -q app.py agents llm models retrieval services run_live.py
 
 ## License
 
-The project currently follows the repository configuration. Confirm the final license text and ownership details before external publication.
+ForecastArena is licensed under the MIT License. See [LICENSE](LICENSE) for details.

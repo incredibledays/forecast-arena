@@ -306,4 +306,4 @@ python -m compileall -q app.py agents llm models retrieval services run_live.py
 
 ## 许可证
 
-项目当前继承仓库配置；发布前请确认最终 license 文本和归属信息。
+ForecastArena 使用 MIT License 授权。详情见 [LICENSE](LICENSE)。
